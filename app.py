@@ -44,13 +44,151 @@ def guarda_bascula(fila):
     ws = connecta()
     ws.append_row(fila, value_input_option="RAW")
 
+# ---------- WHOOP API ----------
+import requests
+import secrets as pysecrets
+from urllib.parse import urlencode
+
+WHOOP_AUTH = "https://api.prod.whoop.com/oauth/oauth2/auth"
+WHOOP_TOKEN = "https://api.prod.whoop.com/oauth/oauth2/token"
+WHOOP_BASE = "https://api.prod.whoop.com/developer/v2"
+SCOPES = "offline read:recovery read:cycles read:sleep read:workout"
+
+
+def ws_tokens():
+    client = connecta().spreadsheet
+    return client.worksheet("tokens")
+
+
+def get_refresh_token():
+    try:
+        v = ws_tokens().acell("A2").value
+        return v.strip() if v else None
+    except Exception:
+        return None
+
+
+def set_refresh_token(token):
+    ws_tokens().update_acell("A2", token)
+
+
+def whoop_url_login():
+    cfg = st.secrets["whoop"]
+    params = {
+        "client_id": cfg["client_id"],
+        "redirect_uri": cfg["redirect_uri"],
+        "response_type": "code",
+        "scope": SCOPES,
+        "state": pysecrets.token_urlsafe(8)[:8],
+    }
+    return f"{WHOOP_AUTH}?{urlencode(params)}"
+
+
+def bescanvia_codi(code):
+    cfg = st.secrets["whoop"]
+    r = requests.post(WHOOP_TOKEN, data={
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": cfg["client_id"],
+        "client_secret": cfg["client_secret"],
+        "redirect_uri": cfg["redirect_uri"],
+    }, timeout=20)
+    r.raise_for_status()
+    d = r.json()
+    set_refresh_token(d["refresh_token"])
+    return d["access_token"]
+
+
+def refresca_token():
+    rt = get_refresh_token()
+    if not rt:
+        return None
+    cfg = st.secrets["whoop"]
+    r = requests.post(WHOOP_TOKEN, data={
+        "grant_type": "refresh_token",
+        "refresh_token": rt,
+        "client_id": cfg["client_id"],
+        "client_secret": cfg["client_secret"],
+        "scope": "offline",
+    }, timeout=20)
+    if r.status_code != 200:
+        return None
+    d = r.json()
+    set_refresh_token(d["refresh_token"])   # el nou substitueix l'antic
+    return d["access_token"]
+
+
+def whoop_get(path, token, params=None):
+    """Recorre totes les pàgines d'un endpoint."""
+    out, next_token = [], None
+    for _ in range(50):
+        p = dict(params or {})
+        p["limit"] = 25
+        if next_token:
+            p["nextToken"] = next_token
+        r = requests.get(f"{WHOOP_BASE}{path}", params=p, timeout=20,
+                         headers={"Authorization": f"Bearer {token}"})
+        r.raise_for_status()
+        d = r.json()
+        out.extend(d.get("records", []))
+        next_token = d.get("next_token")
+        if not next_token:
+            break
+    return out
+
+
+@st.cache_data(ttl=1800)
+def baixa_whoop(_token, dies=180):
+    inici = (pd.Timestamp.utcnow() - pd.Timedelta(days=dies)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    par = {"start": inici}
+
+    cycles = whoop_get("/cycle", _token, par)
+    recov = whoop_get("/recovery", _token, par)
+    sleeps = whoop_get("/activity/sleep", _token, par)
+
+    # --- Cicles: strain i kcal ---
+    c = pd.DataFrame([{
+        "cycle_id": x["id"],
+        "data": pd.to_datetime(x["start"]).date(),
+        "strain": (x.get("score") or {}).get("strain"),
+        "kcal": ((x.get("score") or {}).get("kilojoule") or 0) / 4.184,
+    } for x in cycles])
+
+    # --- Recovery: recovery %, HRV, RHR ---
+    r = pd.DataFrame([{
+        "cycle_id": x["cycle_id"],
+        "recovery": (x.get("score") or {}).get("recovery_score"),
+        "hrv": (x.get("score") or {}).get("hrv_rmssd_milli"),
+        "rhr": (x.get("score") or {}).get("resting_heart_rate"),
+    } for x in recov])
+
+    # --- Son: minuts dormits ---
+    s = pd.DataFrame([{
+        "data": pd.to_datetime(x["start"]).date(),
+        "son_min": (((x.get("score") or {}).get("stage_summary") or {})
+                    .get("total_in_bed_time_milli", 0)
+                    - ((x.get("score") or {}).get("stage_summary") or {})
+                    .get("total_awake_time_milli", 0)) / 60000,
+    } for x in sleeps if not x.get("nap")])
+
+    if c.empty:
+        return pd.DataFrame()
+
+    df = c.merge(r, on="cycle_id", how="left")
+    if not s.empty:
+        df = df.merge(s.groupby("data", as_index=False).sum(), on="data", how="left")
+    else:
+        df["son_min"] = None
+
+    return df.sort_values("data").reset_index(drop=True)
+
 # ---------- MOTOR DE FATIGA ----------
 def calcula_fatiga(df):
     d = df.copy()
-    d["strain"] = pd.to_numeric(d["Esfuerzo del día"], errors="coerce")
-    d["hrv"] = pd.to_numeric(d["Variabilidad de la frecuencia cardíaca (ms)"], errors="coerce")
-    d["rec"] = pd.to_numeric(d["Puntuación de recuperación (%)"], errors="coerce")
-    d["son"] = pd.to_numeric(d["Duración del sueño (min)"], errors="coerce")
+    d["strain"] = pd.to_numeric(d["strain"], errors="coerce")
+    d["hrv"] = pd.to_numeric(d["hrv"], errors="coerce")
+    d["rec"] = pd.to_numeric(d["recovery"], errors="coerce")
+    d["son"] = pd.to_numeric(d["son_min"], errors="coerce")
 
     # ACWR: mitjana exponencial 7d / 28d
     agut = d["strain"].ewm(span=7, min_periods=3).mean()
@@ -138,36 +276,70 @@ def qualitat(w):
 
 # ================= TAB 1: WHOOP =================
 with tab1:
-    fitxer = st.file_uploader("Puja physiological_cycles.csv", type="csv")
+    df = None
 
-    if fitxer is not None:
-        df = pd.read_csv(fitxer)
-        df["data"] = pd.to_datetime(df["Hora de inicio del ciclo"]).dt.date
-        df = df.sort_values("data")
+    # Si tornem del login de Whoop, hi ha un ?code= a la URL
+    code = st.query_params.get("code")
+    if code and not get_refresh_token():
+        try:
+            bescanvia_codi(code)
+            st.query_params.clear()
+            st.success("Connectat a Whoop!")
+        except Exception as e:
+            st.error(f"Error autoritzant: {e}")
 
-        st.success(f"Carregades {len(df)} files.")
+    token = refresca_token()
+
+    if token is None:
+        st.warning("Encara no estàs connectat a Whoop.")
+        st.link_button("🔗 Connectar amb Whoop", whoop_url_login(),
+                       use_container_width=True)
+        st.caption("Un cop autoritzis, tornaràs aquí automàticament.")
+        st.divider()
+        st.caption("Alternativa: puja el CSV manualment.")
+        fitxer = st.file_uploader("physiological_cycles.csv", type="csv")
+        if fitxer is not None:
+            df = pd.read_csv(fitxer)
+            df = df.rename(columns={
+                "Esfuerzo del día": "strain",
+                "Energía quemada (cal)": "kcal",
+                "Puntuación de recuperación (%)": "recovery",
+                "Variabilidad de la frecuencia cardíaca (ms)": "hrv",
+                "Duración del sueño (min)": "son_min",
+            })
+            df["data"] = pd.to_datetime(df["Hora de inicio del ciclo"]).dt.date
+            df = df.sort_values("data")
+    else:
+        c1, c2 = st.columns([3, 1])
+        c1.success("✅ Connectat a Whoop")
+        if c2.button("🔄 Actualitzar dades", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+        with st.spinner("Baixant dades..."):
+            df = baixa_whoop(token)
+
+    if df is None or df.empty:
+        st.info("Sense dades encara.")
+    else:
+        st.caption(f"{len(df)} dies · de {df['data'].min()} a {df['data'].max()}")
 
         tall = pd.Timestamp.today().date() - pd.Timedelta(days=28)
-        recent = df[df["data"] >= tall]
+        rec = df[df["data"] >= tall]
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("TDEE mitjà (4 set.)", f"{recent['Energía quemada (cal)'].mean():.0f} kcal")
-        c2.metric("Recovery mitjà", f"{recent['Puntuación de recuperación (%)'].mean():.0f} %")
-        c3.metric("Strain mitjà", f"{recent['Esfuerzo del día'].mean():.1f}")
-        c4.metric("HRV mitjà", f"{recent['Variabilidad de la frecuencia cardíaca (ms)'].mean():.0f} ms")
+        c1.metric("TDEE mitjà (4 set.)", f"{rec['kcal'].mean():.0f} kcal")
+        c2.metric("Recovery mitjà", f"{rec['recovery'].mean():.0f} %")
+        c3.metric("Strain mitjà", f"{rec['strain'].mean():.1f}")
+        c4.metric("HRV mitjà", f"{rec['hrv'].mean():.0f} ms")
 
         st.divider()
-        st.subheader("Recovery")
-        st.plotly_chart(px.line(df, x="data", y="Puntuación de recuperación (%)"), use_container_width=True)
-
-        st.subheader("Energia cremada (kcal)")
-        st.plotly_chart(px.bar(df, x="data", y="Energía quemada (cal)"), use_container_width=True)
-
-        st.subheader("HRV (ms)")
-        st.plotly_chart(px.line(df, x="data", y="Variabilidad de la frecuencia cardíaca (ms)"), use_container_width=True)
-    else:
-        st.info("Puja el fitxer del Whoop per veure les gràfiques.")
-
+        st.plotly_chart(px.line(df, x="data", y="recovery", title="Recovery (%)"),
+                        use_container_width=True)
+        st.plotly_chart(px.bar(df, x="data", y="kcal", title="Energia cremada (kcal)"),
+                        use_container_width=True)
+        st.plotly_chart(px.line(df, x="data", y="hrv", title="HRV (ms)"),
+                        use_container_width=True)
 
 # ================= TAB 2: BÀSCULA =================
 with tab2:
@@ -258,7 +430,7 @@ with tab2:
 with tab3:
     st.subheader("Prescripció d'avui")
 
-    if fitxer is None:
+    if df is None or df.empty:
         st.warning("Puja el CSV del Whoop a la pestanya 📊 per calcular la prescripció.")
         st.stop()
 
