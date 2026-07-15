@@ -87,8 +87,54 @@ def prescriu(readiness, acwr):
 st.title("🏋️ Hybrid Dash — Uri")
 st.caption("57 → 65 kg · Seguiment Whoop + bàscula")
 
-tab1, tab2, tab3 = st.tabs(["📊 Whoop", "⚖️ Bàscula", "🎯 Avui"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Whoop", "⚖️ Bàscula", "🎯 Avui", "📈 Progrés"])
 
+# ---------- COMPOSICIÓ CORPORAL ----------
+KCAL_BASE = 2500
+OBJECTIU_KG = 65.0
+
+def setmanals(hist):
+    h = hist.set_index("data").sort_index()
+    w = h[["pes", "muscul_esq", "greix_kg", "greix_pct"]].resample("W").mean()
+    return w.dropna(subset=["pes"])
+
+
+def ritme(w, setmanes=3):
+    """kg/setmana segons regressió sobre les últimes N setmanes."""
+    x = w.tail(setmanes)
+    if len(x) < 2:
+        return None
+    dies = (x.index[-1] - x.index[0]).days
+    if dies == 0:
+        return None
+    return (x["pes"].iloc[-1] - x["pes"].iloc[0]) / dies * 7
+
+
+def ajust_kcal(r):
+    if r is None:
+        return "⚪", "Encara no hi ha prou dades", 0, "Calen 3 setmanes de mesures."
+    if r < 0.15:
+        return "🔵", f"{r:+.2f} kg/set — Massa lent", +200, \
+               "Puja 200 kcal de carbohidrats: +50 g d'arròs/pasta al dinar."
+    if r <= 0.40:
+        return "🟢", f"{r:+.2f} kg/set — Correcte", 0, \
+               "No toquis res. Aquest és el ritme objectiu."
+    if r <= 0.60:
+        return "🟡", f"{r:+.2f} kg/set — Vigila", 0, \
+               "Al límit. Revisa la cintura: si creix, retalla. Si no, aguanta."
+    return "🔴", f"{r:+.2f} kg/set — Massa ràpid", -150, \
+           "Retalla 150 kcal. Probablement estàs acumulant greix."
+
+
+def qualitat(w):
+    """% del guany de pes que és múscul esquelètic."""
+    if len(w) < 2:
+        return None
+    d_pes = w["pes"].iloc[-1] - w["pes"].iloc[0]
+    d_mus = w["muscul_esq"].iloc[-1] - w["muscul_esq"].iloc[0]
+    if abs(d_pes) < 0.1:
+        return None
+    return d_mus / d_pes * 100
 
 # ================= TAB 1: WHOOP =================
 with tab1:
@@ -252,3 +298,59 @@ with tab3:
     fig2.add_hline(y=1.5, line_dash="dash", line_color="red",
                    annotation_text="Risc de lesió")
     st.plotly_chart(fig2, use_container_width=True)
+
+# ================= TAB 4: PROGRÉS =================
+with tab4:
+    st.subheader("Validació del guany")
+
+    try:
+        h = llegeix_bascula()
+    except Exception:
+        h = pd.DataFrame()
+
+    if h.empty or len(h) < 2:
+        st.info("Calen almenys 2 mesures. Segueix pesant-te cada dia — "
+                "el sistema farà servir les mitjanes setmanals.")
+        st.stop()
+
+    w = setmanals(h)
+    r = ritme(w)
+    icona, titol, delta, accio = ajust_kcal(r)
+
+    st.markdown(f"## {icona} {titol}")
+    st.info(accio)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Kcal objectiu", f"{KCAL_BASE + delta}",
+              f"{delta:+d}" if delta else "sense canvis")
+    c2.metric("Pes (mitjana setmana)", f"{w['pes'].iloc[-1]:.2f} kg")
+    c3.metric("Falten", f"{OBJECTIU_KG - w['pes'].iloc[-1]:.2f} kg")
+
+    q = qualitat(w)
+    if q is not None:
+        st.divider()
+        st.subheader("Qualitat del guany")
+        c1, c2 = st.columns([1, 3])
+        c1.metric("Múscul del total guanyat", f"{q:.0f} %")
+        if q > 60:
+            c2.success("✅ Guany net. El superàvit està ben calibrat.")
+        elif q > 30:
+            c2.warning("🟡 Normal en volum. Vigila la cintura cada 2 setmanes.")
+        else:
+            c2.error("🔴 Massa greix proporcionalment. Retalla 150-200 kcal.")
+        st.caption("⚠️ La bioimpedància és imprecisa en persones magres. "
+                   "Fes cas a la tendència de 4+ setmanes, no a la xifra d'avui.")
+
+    st.divider()
+    st.subheader("Pes — mitjanes setmanals")
+    fig = px.line(w.reset_index(), x="data", y="pes", markers=True)
+    fig.add_hline(y=OBJECTIU_KG, line_dash="dash", line_color="green",
+                  annotation_text="Objectiu 65 kg")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Múscul esquelètic vs Greix")
+    fig2 = px.line(w.reset_index(), x="data", y=["muscul_esq", "greix_kg"], markers=True)
+    st.plotly_chart(fig2, use_container_width=True)
+
+    with st.expander("Veure mitjanes setmanals"):
+        st.dataframe(w, use_container_width=True)
