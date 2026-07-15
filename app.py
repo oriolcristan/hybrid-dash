@@ -450,14 +450,34 @@ with tab0:
         st.info(d["extra"])
 
         with st.expander("🔥 ESCALFAMENT (10 min) — obligatori", expanded=False):
-            st.markdown("**1. Foam roller**")
-            st.dataframe(pd.DataFrame(R.FOAM), hide_index=True, use_container_width=True)
+            st.markdown("### 1. Foam roller")
             st.error("⚠️ MAI passis el roller per la banda IT directament. "
                      "És teixit connectiu: no es 'desenganxa' i només l'inflames.")
-            st.markdown("**2. Mobilitat dinàmica**")
-            st.dataframe(pd.DataFrame(R.DINAMIC), hide_index=True, use_container_width=True)
-            st.markdown("**3. Activació amb minibands (prevenció BIT)**")
-            st.dataframe(pd.DataFrame(R.MINIBANDS), hide_index=True, use_container_width=True)
+            for e in R.FOAM:
+                with st.expander(f"**{e['zona']}** — {e['dosi']}"):
+                    st.markdown(f"**On:** {e['on']}")
+                    st.markdown(f"**Com:** {e['com']}")
+                    st.markdown(f"**Per què:** {e['per']}")
+                    st.link_button("📹 YouTube",
+                        f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
+
+            st.markdown("### 2. Mobilitat dinàmica")
+            for e in R.DINAMIC:
+                with st.expander(f"**{e['exercici']}** — {e['dosi']}"):
+                    st.markdown(f"**Què és:** {e['què']}")
+                    st.markdown(f"**Com:** {e['com']}")
+                    st.markdown(f"**Per què:** {e['per']}")
+                    st.link_button("📹 YouTube",
+                        f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
+
+            st.markdown("### 3. Activació minibands (prevenció BIT)")
+            for e in R.MINIBANDS:
+                with st.expander(f"**{e['exercici']}** — {e['dosi']}"):
+                    st.markdown(f"**Què és:** {e['què']}")
+                    st.markdown(f"**Com:** {e['com']}")
+                    st.markdown(f"**Per què:** {e['per']}")
+                    st.link_button("📹 YouTube",
+                        f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
 
         st.subheader("Sessió")
         for i, e in enumerate(d["exercicis"], 1):
@@ -496,7 +516,15 @@ a **totes** les sèries. Ni abans.
 
 **Dominades:** progressió només per reps fins a 4x10 net. Després, llast.
             """)
-
+with st.expander("🧊 TORNADA A LA CALMA (5 min) — al acabar", expanded=False):
+            st.info("El teixit està calent: és la millor finestra del dia per guanyar ROM. "
+                    "Ara sí que toca estàtic — abans d'entrenar t'hauria baixat la força.")
+            for e in R.TORNADA_CALMA:
+                with st.expander(f"**{e['posició']}** — {e['temps']}"):
+                    st.markdown(f"**Com:** {e['com']}")
+                    st.markdown(f"**Clau:** {e['clau']}")
+                    st.link_button("📹 YouTube",
+                        f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
         st.divider()
         st.subheader("🦵 Semàfor del genoll")
         st.dataframe(pd.DataFrame([
@@ -526,8 +554,12 @@ a **totes** les sèries. Ni abans.
         st.error("⚠️ Banda IT: MAI directament.")
 
         st.subheader("Bloc 2 — Estirament profund (12 min)")
-        st.dataframe(pd.DataFrame(R.PASSIVA), hide_index=True, use_container_width=True)
-
+        for e in R.PASSIVA:
+            with st.expander(f"**{e['posició']}** — {e['temps']}"):
+                st.markdown(f"**Com:** {e['com']}")
+                st.markdown(f"**Clau:** {e['clau']}")
+                st.link_button("📹 YouTube",
+                    f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
         st.success("Si una setmana només pots fer una cosa: **couch stretch, 2 min per costat, cada dia.** "
                    "És el 80% del resultat per al teu perfil (bici + cadira + BIT).")
 
@@ -535,7 +567,10 @@ a **totes** les sèries. Ni abans.
     else:
         st.info(d["extra"])
         st.subheader("Micro-dosi diària")
-        st.dataframe(pd.DataFrame(R.MICRO), hide_index=True, use_container_width=True)
+        for e in R.MICRO:
+            with st.expander(f"**{e['quan']}**"):
+                st.markdown(f"**Què:** {e['què']}")
+                st.markdown(f"**Per què:** {e['per']}")
         st.caption("Freqüència > durada. Això és el multiplicador.")
 
 
