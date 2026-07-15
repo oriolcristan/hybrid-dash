@@ -460,13 +460,29 @@ with tab0:
             st.dataframe(pd.DataFrame(R.MINIBANDS), hide_index=True, use_container_width=True)
 
         st.subheader("Sessió")
-        taula = pd.DataFrame([{
-            "Patró": e["patró"],
-            "Exercici": e[key_lloc],
-            "Sèries x Reps": e["sr"],
-            "Tempo": e["tempo"],
-        } for e in d["exercicis"]])
-        st.dataframe(taula, hide_index=True, use_container_width=True)
+        for i, e in enumerate(d["exercicis"], 1):
+            with st.expander(f"**{i}. {e[key_lloc]}** — {e['sr']}", expanded=False):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Patró", e["patró"])
+                c2.metric("Sèries x Reps", e["sr"])
+                c3.metric("Tempo", e["tempo"])
+
+                st.markdown(f"**Què és:** {e['què']}")
+                st.markdown(f"**Per a què serveix:** {e['per']}")
+                st.markdown(f"**Com es fa:** {e['com']}")
+
+                q = e["yt"].replace(" ", "+")
+                st.link_button("📹 Veure vídeos de tècnica a YouTube",
+                               f"https://www.youtube.com/results?search_query={q}",
+                               use_container_width=True)
+
+        with st.expander("📋 Veure sessió en format taula (resum ràpid)"):
+            st.dataframe(pd.DataFrame([{
+                "Patró": e["patró"],
+                "Exercici": e[key_lloc],
+                "Sèries x Reps": e["sr"],
+                "Tempo": e["tempo"],
+            } for e in d["exercicis"]]), hide_index=True, use_container_width=True)
 
         with st.expander("⏱️ Descansos i regles"):
             st.dataframe(pd.DataFrame(R.DESCANSOS), hide_index=True, use_container_width=True)
