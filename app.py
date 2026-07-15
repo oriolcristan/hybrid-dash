@@ -94,7 +94,7 @@ with tab2:
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            pes = st.number_input("Pes (kg)", 40.0, 120.0, 57.0, 0.05)
+            pes = st.number_input("Pes (kg)", 40.0, 120.0, 57.15, 0.01, format="%.2f")
             bmi = st.number_input("BMI", 10.0, 40.0, 18.8, 0.1)
             greix_pct = st.number_input("Taxa de greix (%)", 3.0, 50.0, 12.0, 0.1)
             greix_kg = st.number_input("Massa greix (kg)", 1.0, 50.0, 6.8, 0.1)
