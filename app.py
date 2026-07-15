@@ -123,7 +123,11 @@ with tab2:
             st.error(f"Error en guardar: {e}")
 
     st.divider()
-    st.subheader("Historial")
+    c_tit, c_btn = st.columns([4, 1])
+    c_tit.subheader("Historial")
+    if c_btn.button("🔄 Refrescar", use_container_width=True):
+        st.cache_resource.clear()
+        st.rerun()
 
     try:
         hist = llegeix_bascula()
