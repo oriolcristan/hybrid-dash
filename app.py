@@ -28,15 +28,16 @@ def connecta():
 
 def llegeix_bascula():
     ws = connecta()
-    df = pd.DataFrame(ws.get_all_records())
-    if df.empty:
-        return df
-    df["data"] = pd.to_datetime(df["data"])
+    valors = ws.get_all_values()
+    if len(valors) < 2:
+        return pd.DataFrame()
+    df = pd.DataFrame(valors[1:], columns=valors[0])
+    df["data"] = pd.to_datetime(df["data"], errors="coerce")
     for c in COLS[1:]:
         df[c] = pd.to_numeric(
             df[c].astype(str).str.replace(",", ".", regex=False),
             errors="coerce")
-    return df.sort_values("data")
+    return df.dropna(subset=["data"]).sort_values("data")
 
 
 def guarda_bascula(fila):
