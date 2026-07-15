@@ -33,7 +33,9 @@ def llegeix_bascula():
         return df
     df["data"] = pd.to_datetime(df["data"])
     for c in COLS[1:]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+        df[c] = pd.to_numeric(
+            df[c].astype(str).str.replace(",", ".", regex=False),
+            errors="coerce")
     return df.sort_values("data")
 
 
