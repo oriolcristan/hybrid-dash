@@ -515,8 +515,9 @@ a **totes** les sèries. Ni abans.
 **No alteris l'ordre.** Els bàsics primer (sistema nerviós fresc), el core al final.
 
 **Dominades:** progressió només per reps fins a 4x10 net. Després, llast.
-            """)
-with st.expander("🧊 TORNADA A LA CALMA (5 min) — al acabar", expanded=False):
+           """)
+
+        with st.expander("🧊 TORNADA A LA CALMA (5 min) — al acabar", expanded=False):
             st.info("El teixit està calent: és la millor finestra del dia per guanyar ROM. "
                     "Ara sí que toca estàtic — abans d'entrenar t'hauria baixat la força.")
             for e in R.TORNADA_CALMA:
@@ -525,6 +526,7 @@ with st.expander("🧊 TORNADA A LA CALMA (5 min) — al acabar", expanded=False
                     st.markdown(f"**Clau:** {e['clau']}")
                     st.link_button("📹 YouTube",
                         f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
+
         st.divider()
         st.subheader("🦵 Semàfor del genoll")
         st.dataframe(pd.DataFrame([
