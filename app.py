@@ -41,7 +41,7 @@ def llegeix_bascula():
 
 def guarda_bascula(fila):
     ws = connecta()
-    ws.append_row(fila, value_input_option="USER_ENTERED")
+    ws.append_row(fila, value_input_option="RAW")
 
 
 # ---------- CAPÇALERA ----------
