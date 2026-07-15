@@ -4,6 +4,8 @@ import plotly.express as px
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import date
+import rutina as R
+from datetime import datetime
 
 st.set_page_config(page_title="Hybrid Dash", page_icon="🏋️", layout="wide")
 
@@ -225,7 +227,8 @@ def prescriu(readiness, acwr):
 st.title("🏋️ Hybrid Dash — Uri")
 st.caption("57 → 65 kg · Seguiment Whoop + bàscula")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Whoop", "⚖️ Bàscula", "🎯 Avui", "📈 Progrés"])
+tab0, tab1, tab2, tab3, tab4 = st.tabs(
+    ["🗓️ Avui toca", "📊 Whoop", "⚖️ Bàscula", "🎯 Readiness", "📈 Progrés"])
 
 # ---------- COMPOSICIÓ CORPORAL ----------
 KCAL_BASE = 2500
@@ -526,3 +529,96 @@ with tab4:
 
     with st.expander("Veure mitjanes setmanals"):
         st.dataframe(w, use_container_width=True)
+
+# ================= TAB 0: AVUI TOCA =================
+with tab0:
+    avui_idx = datetime.today().weekday()
+
+    c1, c2 = st.columns([2, 1])
+    dia_sel = c1.selectbox(
+        "Dia", options=list(R.DIES.keys()),
+        format_func=lambda i: R.DIES[i]["nom"] + (" (avui)" if i == avui_idx else ""),
+        index=avui_idx)
+    lloc = c2.radio("Ubicació", ["🏠 Casa", "🏢 Apartament"], horizontal=True)
+    key_lloc = "casa" if "Casa" in lloc else "apart"
+
+    d = R.DIES[dia_sel]
+    st.markdown(f"## {d['titol']}")
+    st.caption(d["sub"])
+
+    # ---------- DIES DE FORÇA ----------
+    if d["tipus"] == "forca":
+        st.info(d["extra"])
+
+        with st.expander("🔥 ESCALFAMENT (10 min) — obligatori", expanded=False):
+            st.markdown("**1. Foam roller**")
+            st.dataframe(pd.DataFrame(R.FOAM), hide_index=True, use_container_width=True)
+            st.error("⚠️ MAI passis el roller per la banda IT directament. "
+                     "És teixit connectiu: no es 'desenganxa' i només l'inflames.")
+            st.markdown("**2. Mobilitat dinàmica**")
+            st.dataframe(pd.DataFrame(R.DINAMIC), hide_index=True, use_container_width=True)
+            st.markdown("**3. Activació amb minibands (prevenció BIT)**")
+            st.dataframe(pd.DataFrame(R.MINIBANDS), hide_index=True, use_container_width=True)
+
+        st.subheader("Sessió")
+        taula = pd.DataFrame([{
+            "Patró": e["patró"],
+            "Exercici": e[key_lloc],
+            "Sèries x Reps": e["sr"],
+            "Tempo": e["tempo"],
+        } for e in d["exercicis"]])
+        st.dataframe(taula, hide_index=True, use_container_width=True)
+
+        with st.expander("⏱️ Descansos i regles"):
+            st.dataframe(pd.DataFrame(R.DESCANSOS), hide_index=True, use_container_width=True)
+            st.markdown("""
+**Doble progressió:** només puges càrrega quan fas el límit **superior** de reps
+a **totes** les sèries. Ni abans.
+
+**RPE:** setmana 1 → RPE 6-7 · setmana 2 → RPE 7-8 · setmana 3+ → RPE 8.
+
+**No alteris l'ordre.** Els bàsics primer (sistema nerviós fresc), el core al final.
+
+**Dominades:** progressió només per reps fins a 4x10 net. Després, llast.
+            """)
+
+        st.divider()
+        st.subheader("🦵 Semàfor del genoll")
+        st.dataframe(pd.DataFrame([
+            {"Senyal": "Molèstia lateral DURANT l'exercici", "Acció": "Para aquell exercici. Revisa tècnica."},
+            {"Senyal": "Molèstia L'ENDEMÀ", "Acció": "−30% volum de tren inferior la propera sessió"},
+            {"Senyal": "Dolor punxant al genoll extern", "Acció": "PARA i consulta"},
+            {"Senyal": "Res", "Acció": "Endavant"},
+        ]), hide_index=True, use_container_width=True)
+
+        st.divider()
+        st.text_area("📝 Registre de la sessió (copia-ho a les notes del mòbil)",
+                     value=f"{d['nom']} {datetime.today().strftime('%d/%m')} — {d['titol']}\n"
+                           + "\n".join(f"{e['patró']}: " for e in d["exercicis"])
+                           + "\nGenoll: ",
+                     height=200)
+
+    # ---------- MOBILITAT PASSIVA ----------
+    elif d["tipus"] == "passiva":
+        st.info(d["extra"])
+
+        st.subheader("Bloc 1 — Alliberament (4 min)")
+        st.dataframe(pd.DataFrame([
+            {"zona": "TFL (pressió sostinguda + flexió/extensió genoll)", "dosi": "90 s/costat"},
+            {"zona": "Gluti mitjà (roller o pilota)", "dosi": "60 s/costat"},
+            {"zona": "Vast lateral", "dosi": "60 s/costat"},
+        ]), hide_index=True, use_container_width=True)
+        st.error("⚠️ Banda IT: MAI directament.")
+
+        st.subheader("Bloc 2 — Estirament profund (12 min)")
+        st.dataframe(pd.DataFrame(R.PASSIVA), hide_index=True, use_container_width=True)
+
+        st.success("Si una setmana només pots fer una cosa: **couch stretch, 2 min per costat, cada dia.** "
+                   "És el 80% del resultat per al teu perfil (bici + cadira + BIT).")
+
+    # ---------- MICRO-DOSI ----------
+    else:
+        st.info(d["extra"])
+        st.subheader("Micro-dosi diària")
+        st.dataframe(pd.DataFrame(R.MICRO), hide_index=True, use_container_width=True)
+        st.caption("Freqüència > durada. Això és el multiplicador.")
