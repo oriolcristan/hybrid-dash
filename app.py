@@ -167,5 +167,44 @@ with tab2:
                     title="Múscul esquelètic vs Massa greix (kg)"),
             use_container_width=True)
 
+# ---------- MOTOR DE FATIGA ----------
+def calcula_fatiga(df):
+    d = df.copy()
+    d["strain"] = pd.to_numeric(d["Esfuerzo del día"], errors="coerce")
+    d["hrv"] = pd.to_numeric(d["Variabilidad de la frecuencia cardíaca (ms)"], errors="coerce")
+    d["rec"] = pd.to_numeric(d["Puntuación de recuperación (%)"], errors="coerce")
+    d["son"] = pd.to_numeric(d["Duración del sueño (min)"], errors="coerce")
+
+    # ACWR: mitjana exponencial 7d / 28d
+    agut = d["strain"].ewm(span=7, min_periods=3).mean()
+    cronic = d["strain"].ewm(span=28, min_periods=7).mean()
+    d["acwr"] = agut / cronic
+
+    # HRV z-score sobre baseline rodant de 30 dies
+    mu = d["hrv"].rolling(30, min_periods=10).mean()
+    sd = d["hrv"].rolling(30, min_periods=10).std()
+    d["hrv_z"] = (d["hrv"] - mu) / sd
+
+    # Normalitzacions a 0-100
+    n_rec = d["rec"].clip(0, 100)
+    n_hrv = ((d["hrv_z"] + 2) / 4 * 100).clip(0, 100)
+    n_son = (d["son"] / 480 * 100).clip(0, 100)
+    pen = (1 - (d["acwr"] - 1.3).clip(0, 0.7) / 0.7) * 100
+
+    d["readiness"] = (0.4 * n_rec + 0.3 * n_hrv + 0.2 * n_son + 0.1 * pen)
+    return d
+
+
+def prescriu(readiness, acwr):
+    if pd.isna(readiness):
+        return "⚪", "Dades insuficients", "Cal més històric per calcular."
+    if readiness > 80:
+        return "🟢", "VERD — Empeny", "Sèrie extra al bàsic. Intenta PR (RPE 8-9). Cardio intens OK."
+    if readiness >= 60:
+        return "🔵", "BLAU — Pla normal", "Executa la sessió tal com està programada. RPE 7-8."
+    if readiness >= 40:
+        return "🟡", "GROC — Retalla", "−1 sèrie per exercici. RPE màxim 7. Cardio només Z2."
+    return "🔴", "VERMELL — Deload", "50% del volum, només tècnica. O descans + mobilitat."
+            
         with st.expander("Veure totes les dades"):
             st.dataframe(hist, use_container_width=True)
