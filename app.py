@@ -555,6 +555,140 @@ a **totes** les sèries. Ni abans.
 
         st.divider()
         st.info("📤 Registra la sessió a la pestanya **Report** quan acabis.")
+    # ---------- MOBILITAT PASSIVA ----------
+    elif d["tipus"] == "passiva":
+        st.info(d["extra"])
+
+        st.subheader("Bloc 1 — Alliberament (4 min)")
+        st.dataframe(pd.DataFrame([
+            {"zona": "TFL (pressió sostinguda + flexió/extensió genoll)", "dosi": "90 s/costat"},
+            {"zona": "Gluti mitjà (roller o pilota)", "dosi": "60 s/costat"},
+            {"zona": "Vast lateral", "dosi": "60 s/costat"},
+        ]), hide_index=True, use_container_width=True)
+        st.error("⚠️ Banda IT: MAI directament.")
+
+        st.subheader("Bloc 2 — Estirament profund (12 min)")
+        for e in R.PASSIVA:
+            with st.expander(f"**{e['posició']}** — {e['temps']}"):
+                st.markdown(f"**Com:** {e['com']}")
+                st.markdown(f"**Clau:** {e['clau']}")
+                st.link_button("📹 YouTube",
+                    f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
+        st.success("Si una setmana només pots fer una cosa: **couch stretch, 2 min per costat, cada dia.** "
+                   "És el 80% del resultat per al teu perfil (bici + cadira + BIT).")
+
+    # ---------- MICRO-DOSI ----------
+    else:
+        st.info(d["extra"])
+        st.subheader("Micro-dosi diària")
+        for e in R.MICRO:
+            with st.expander(f"**{e['quan']}**"):
+                st.markdown(f"**Què:** {e['què']}")
+                st.markdown(f"**Per què:** {e['per']}")
+        st.caption("Freqüència > durada. Això és el multiplicador.")
+
+
+# ================= TAB 3: AVUI =================
+with tab3:
+    st.subheader("Prescripció d'avui")
+
+    if df is None or df.empty:
+        st.warning("Puja el CSV del Whoop a la pestanya 📊 per calcular la prescripció.")
+        st.stop()
+
+    f = calcula_fatiga(df)
+    avui = f.iloc[-1]
+    icona, titol, accio = prescriu(avui["readiness"], avui["acwr"])
+
+    st.markdown(f"## {icona} {titol}")
+    st.info(accio)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Readiness", f"{avui['readiness']:.0f}" if pd.notna(avui["readiness"]) else "—")
+    c2.metric("Recovery", f"{avui['rec']:.0f} %")
+    c3.metric("ACWR", f"{avui['acwr']:.2f}" if pd.notna(avui["acwr"]) else "—")
+    c4.metric("HRV z-score", f"{avui['hrv_z']:+.2f}" if pd.notna(avui["hrv_z"]) else "—")
+
+    # Alerta BIT
+    if pd.notna(avui["acwr"]) and avui["acwr"] > 1.4:
+        st.error("⚠️ **ACWR > 1.4** — Càrrega acumulada alta. Retalla volum de tren inferior "
+                 "aquesta setmana (protecció BIT: la fatiga degrada la mecànica del gluti mitjà).")
+
+    st.divider()
+
+    st.subheader("Readiness (60 dies)")
+    ult = f.tail(60)
+    fig = px.line(ult, x="data", y="readiness", markers=True)
+    fig.add_hrect(y0=80, y1=100, fillcolor="green", opacity=0.08, line_width=0)
+    fig.add_hrect(y0=60, y1=80, fillcolor="blue", opacity=0.08, line_width=0)
+    fig.add_hrect(y0=40, y1=60, fillcolor="orange", opacity=0.08, line_width=0)
+    fig.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.08, line_width=0)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("ACWR — càrrega aguda / crònica")
+    fig2 = px.line(ult, x="data", y="acwr", markers=True)
+    fig2.add_hrect(y0=0.8, y1=1.3, fillcolor="green", opacity=0.1, line_width=0,
+                   annotation_text="Sweet spot")
+    fig2.add_hline(y=1.5, line_dash="dash", line_color="red",
+                   annotation_text="Risc de lesió")
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ================= TAB 4: PROGRÉS =================
+with tab4:
+    st.subheader("Validació del guany")
+
+    try:
+        h = llegeix_bascula()
+    except Exception:
+        h = pd.DataFrame()
+
+    if h.empty or len(h) < 2:
+        st.info("Calen almenys 2 mesures. Segueix pesant-te cada dia — "
+                "el sistema farà servir les mitjanes setmanals.")
+        st.stop()
+
+    w = setmanals(h)
+    r = ritme(w)
+    icona, titol, delta, accio = ajust_kcal(r)
+
+    st.markdown(f"## {icona} {titol}")
+    st.info(accio)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Kcal objectiu", f"{KCAL_BASE + delta}",
+              f"{delta:+d}" if delta else "sense canvis")
+    c2.metric("Pes (mitjana setmana)", f"{w['pes'].iloc[-1]:.2f} kg")
+    c3.metric("Falten", f"{OBJECTIU_KG - w['pes'].iloc[-1]:.2f} kg")
+
+    q = qualitat(w)
+    if q is not None:
+        st.divider()
+        st.subheader("Qualitat del guany")
+        c1, c2 = st.columns([1, 3])
+        c1.metric("Múscul del total guanyat", f"{q:.0f} %")
+        if q > 60:
+            c2.success("✅ Guany net. El superàvit està ben calibrat.")
+        elif q > 30:
+            c2.warning("🟡 Normal en volum. Vigila la cintura cada 2 setmanes.")
+        else:
+            c2.error("🔴 Massa greix proporcionalment. Retalla 150-200 kcal.")
+        st.caption("⚠️ La bioimpedància és imprecisa en persones magres. "
+                   "Fes cas a la tendència de 4+ setmanes, no a la xifra d'avui.")
+
+    st.divider()
+    st.subheader("Pes — mitjanes setmanals")
+    fig = px.line(w.reset_index(), x="data", y="pes", markers=True)
+    fig.add_hline(y=OBJECTIU_KG, line_dash="dash", line_color="green",
+                  annotation_text="Objectiu 65 kg")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Múscul esquelètic vs Greix")
+    fig2 = px.line(w.reset_index(), x="data", y=["muscul_esq", "greix_kg"], markers=True)
+    st.plotly_chart(fig2, use_container_width=True)
+
+    with st.expander("Veure mitjanes setmanals"):
+        st.dataframe(w, use_container_width=True)
+
 # ================= TAB 5: REPORT =================
 with tab5:
     st.subheader("Registre i informe setmanal")
@@ -714,137 +848,3 @@ with tab5:
                                use_container_width=True)
         
         
-    # ---------- MOBILITAT PASSIVA ----------
-    elif d["tipus"] == "passiva":
-        st.info(d["extra"])
-
-        st.subheader("Bloc 1 — Alliberament (4 min)")
-        st.dataframe(pd.DataFrame([
-            {"zona": "TFL (pressió sostinguda + flexió/extensió genoll)", "dosi": "90 s/costat"},
-            {"zona": "Gluti mitjà (roller o pilota)", "dosi": "60 s/costat"},
-            {"zona": "Vast lateral", "dosi": "60 s/costat"},
-        ]), hide_index=True, use_container_width=True)
-        st.error("⚠️ Banda IT: MAI directament.")
-
-        st.subheader("Bloc 2 — Estirament profund (12 min)")
-        for e in R.PASSIVA:
-            with st.expander(f"**{e['posició']}** — {e['temps']}"):
-                st.markdown(f"**Com:** {e['com']}")
-                st.markdown(f"**Clau:** {e['clau']}")
-                st.link_button("📹 YouTube",
-                    f"https://www.youtube.com/results?search_query={e['yt'].replace(' ', '+')}")
-        st.success("Si una setmana només pots fer una cosa: **couch stretch, 2 min per costat, cada dia.** "
-                   "És el 80% del resultat per al teu perfil (bici + cadira + BIT).")
-
-    # ---------- MICRO-DOSI ----------
-    else:
-        st.info(d["extra"])
-        st.subheader("Micro-dosi diària")
-        for e in R.MICRO:
-            with st.expander(f"**{e['quan']}**"):
-                st.markdown(f"**Què:** {e['què']}")
-                st.markdown(f"**Per què:** {e['per']}")
-        st.caption("Freqüència > durada. Això és el multiplicador.")
-
-
-# ================= TAB 3: AVUI =================
-with tab3:
-    st.subheader("Prescripció d'avui")
-
-    if df is None or df.empty:
-        st.warning("Puja el CSV del Whoop a la pestanya 📊 per calcular la prescripció.")
-        st.stop()
-
-    f = calcula_fatiga(df)
-    avui = f.iloc[-1]
-    icona, titol, accio = prescriu(avui["readiness"], avui["acwr"])
-
-    st.markdown(f"## {icona} {titol}")
-    st.info(accio)
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Readiness", f"{avui['readiness']:.0f}" if pd.notna(avui["readiness"]) else "—")
-    c2.metric("Recovery", f"{avui['rec']:.0f} %")
-    c3.metric("ACWR", f"{avui['acwr']:.2f}" if pd.notna(avui["acwr"]) else "—")
-    c4.metric("HRV z-score", f"{avui['hrv_z']:+.2f}" if pd.notna(avui["hrv_z"]) else "—")
-
-    # Alerta BIT
-    if pd.notna(avui["acwr"]) and avui["acwr"] > 1.4:
-        st.error("⚠️ **ACWR > 1.4** — Càrrega acumulada alta. Retalla volum de tren inferior "
-                 "aquesta setmana (protecció BIT: la fatiga degrada la mecànica del gluti mitjà).")
-
-    st.divider()
-
-    st.subheader("Readiness (60 dies)")
-    ult = f.tail(60)
-    fig = px.line(ult, x="data", y="readiness", markers=True)
-    fig.add_hrect(y0=80, y1=100, fillcolor="green", opacity=0.08, line_width=0)
-    fig.add_hrect(y0=60, y1=80, fillcolor="blue", opacity=0.08, line_width=0)
-    fig.add_hrect(y0=40, y1=60, fillcolor="orange", opacity=0.08, line_width=0)
-    fig.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.08, line_width=0)
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("ACWR — càrrega aguda / crònica")
-    fig2 = px.line(ult, x="data", y="acwr", markers=True)
-    fig2.add_hrect(y0=0.8, y1=1.3, fillcolor="green", opacity=0.1, line_width=0,
-                   annotation_text="Sweet spot")
-    fig2.add_hline(y=1.5, line_dash="dash", line_color="red",
-                   annotation_text="Risc de lesió")
-    st.plotly_chart(fig2, use_container_width=True)
-
-# ================= TAB 4: PROGRÉS =================
-with tab4:
-    st.subheader("Validació del guany")
-
-    try:
-        h = llegeix_bascula()
-    except Exception:
-        h = pd.DataFrame()
-
-    if h.empty or len(h) < 2:
-        st.info("Calen almenys 2 mesures. Segueix pesant-te cada dia — "
-                "el sistema farà servir les mitjanes setmanals.")
-        st.stop()
-
-    w = setmanals(h)
-    r = ritme(w)
-    icona, titol, delta, accio = ajust_kcal(r)
-
-    st.markdown(f"## {icona} {titol}")
-    st.info(accio)
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Kcal objectiu", f"{KCAL_BASE + delta}",
-              f"{delta:+d}" if delta else "sense canvis")
-    c2.metric("Pes (mitjana setmana)", f"{w['pes'].iloc[-1]:.2f} kg")
-    c3.metric("Falten", f"{OBJECTIU_KG - w['pes'].iloc[-1]:.2f} kg")
-
-    q = qualitat(w)
-    if q is not None:
-        st.divider()
-        st.subheader("Qualitat del guany")
-        c1, c2 = st.columns([1, 3])
-        c1.metric("Múscul del total guanyat", f"{q:.0f} %")
-        if q > 60:
-            c2.success("✅ Guany net. El superàvit està ben calibrat.")
-        elif q > 30:
-            c2.warning("🟡 Normal en volum. Vigila la cintura cada 2 setmanes.")
-        else:
-            c2.error("🔴 Massa greix proporcionalment. Retalla 150-200 kcal.")
-        st.caption("⚠️ La bioimpedància és imprecisa en persones magres. "
-                   "Fes cas a la tendència de 4+ setmanes, no a la xifra d'avui.")
-
-    st.divider()
-    st.subheader("Pes — mitjanes setmanals")
-    fig = px.line(w.reset_index(), x="data", y="pes", markers=True)
-    fig.add_hline(y=OBJECTIU_KG, line_dash="dash", line_color="green",
-                  annotation_text="Objectiu 65 kg")
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Múscul esquelètic vs Greix")
-    fig2 = px.line(w.reset_index(), x="data", y=["muscul_esq", "greix_kg"], markers=True)
-    st.plotly_chart(fig2, use_container_width=True)
-
-    with st.expander("Veure mitjanes setmanals"):
-        st.dataframe(w, use_container_width=True)
-
