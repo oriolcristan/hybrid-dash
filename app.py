@@ -227,8 +227,8 @@ def prescriu(readiness, acwr):
 st.title("🏋️ Hybrid Dash — Uri")
 st.caption("57 → 65 kg · Seguiment Whoop + bàscula")
 
-tab0, tab1, tab2, tab3, tab4 = st.tabs(
-    ["🗓️ Avui toca", "📊 Whoop", "⚖️ Bàscula", "🎯 Readiness", "📈 Progrés"])
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["🗓️ Avui toca", "📊 Whoop", "⚖️ Bàscula", "🎯 Readiness", "📈 Progrés", "📤 Report"])
 
 # ---------- COMPOSICIÓ CORPORAL ----------
 KCAL_BASE = 2500
@@ -276,6 +276,23 @@ def qualitat(w):
     if abs(d_pes) < 0.1:
         return None
     return d_mus / d_pes * 100
+
+# ---------- REGISTRE DE SESSIONS ----------
+def ws_sessions():
+    return connecta().spreadsheet.worksheet("sessions")
+
+
+def guarda_sessio(fila):
+    ws_sessions().append_row(fila, value_input_option="RAW")
+
+
+def llegeix_sessions():
+    v = ws_sessions().get_all_values()
+    if len(v) < 2:
+        return pd.DataFrame()
+    d = pd.DataFrame(v[1:], columns=v[0])
+    d["data"] = pd.to_datetime(d["data"], errors="coerce")
+    return d.dropna(subset=["data"]).sort_values("data")
 
 # ================= TAB 1: WHOOP =================
 with tab1:
@@ -537,12 +554,166 @@ a **totes** les sèries. Ni abans.
         ]), hide_index=True, use_container_width=True)
 
         st.divider()
-        st.text_area("📝 Registre de la sessió (copia-ho a les notes del mòbil)",
-                     value=f"{d['nom']} {datetime.today().strftime('%d/%m')} — {d['titol']}\n"
-                           + "\n".join(f"{e['patró']}: " for e in d["exercicis"])
-                           + "\nGenoll: ",
-                     height=200)
+        st.info("📤 Registra la sessió a la pestanya **Report** quan acabis.")
+# ================= TAB 5: REPORT =================
+with tab5:
+    st.subheader("Registre i informe setmanal")
 
+    sub1, sub2 = st.tabs(["✍️ Registrar sessió", "📤 Generar informe"])
+
+    # ---------- REGISTRAR ----------
+    with sub1:
+        with st.form("form_sessio", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            s_data = c1.date_input("Data", value=date.today())
+            s_dia = c2.selectbox("Sessió", ["FORÇA A", "FORÇA B", "FORÇA C",
+                                            "Mobilitat", "Bici/pàdel/altres"])
+            s_ubi = c3.selectbox("Ubicació", ["Casa", "Apartament", "—"])
+
+            s_ex = st.text_area(
+                "Exercicis (un per línia: exercici, càrrega, reps, RPE)",
+                placeholder="Goblet squat: 16kg 4x8 @RPE7\nDominades: BW 6,5,5,4 @RPE8\n...",
+                height=180)
+
+            c1, c2 = st.columns([1, 2])
+            s_genoll = c1.selectbox("Genoll (BIT)",
+                                    ["OK", "Molèstia durant", "Molèstia l'endemà", "Dolor punxant"])
+            s_rpe = c2.slider("RPE global de la sessió", 1, 10, 7)
+
+            s_notes = st.text_area("Notes lliures (sensacions, què ha costat, què no)", height=80)
+
+            if st.form_submit_button("💾 Guardar sessió", use_container_width=True):
+                try:
+                    guarda_sessio([str(s_data), s_dia, s_ubi, s_ex, s_genoll, s_notes, s_rpe])
+                    st.success("Sessió guardada.")
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+
+        st.divider()
+        try:
+            hs = llegeix_sessions()
+            if not hs.empty:
+                st.caption(f"{len(hs)} sessions registrades")
+                with st.expander("Veure historial"):
+                    st.dataframe(hs, use_container_width=True, hide_index=True)
+        except Exception:
+            st.info("Encara no hi ha sessions.")
+
+    # ---------- INFORME ----------
+    with sub2:
+        c1, c2 = st.columns(2)
+        d_ini = c1.date_input("Des de", value=date.today() - pd.Timedelta(days=28))
+        d_fi = c2.date_input("Fins a", value=date.today())
+
+        feedback = st.text_area(
+            "El teu feedback del període",
+            placeholder="Com t'has trobat? Què t'ha costat? Dubtes? Com va el genoll? "
+                        "Has pogut seguir la dieta? Alguna cosa que vulguis canviar?",
+            height=140)
+
+        if st.button("📤 Generar informe", use_container_width=True, type="primary"):
+            L = []
+            L.append("=" * 55)
+            L.append(f"INFORME HYBRID-DASH — {d_ini} a {d_fi}")
+            L.append("=" * 55)
+
+            # --- Bàscula ---
+            L.append("\n## COMPOSICIÓ CORPORAL")
+            try:
+                h = llegeix_bascula()
+                h = h[(h["data"].dt.date >= d_ini) & (h["data"].dt.date <= d_fi)]
+                if len(h) >= 1:
+                    w = setmanals(h)
+                    L.append(f"Mesures al període: {len(h)}")
+                    for idx, row in w.iterrows():
+                        L.append(f"  Setmana {idx.date()}: pes {row['pes']:.2f} kg · "
+                                 f"múscul esq. {row['muscul_esq']:.1f} kg · "
+                                 f"greix {row['greix_kg']:.1f} kg ({row['greix_pct']:.1f}%)")
+                    r = ritme(w, setmanes=len(w))
+                    if r is not None:
+                        ic, tit, delta, acc = ajust_kcal(r)
+                        L.append(f"\nRitme: {r:+.2f} kg/setmana → {tit}")
+                        L.append(f"Recomanació app: {acc}")
+                        q = qualitat(w)
+                        if q is not None:
+                            L.append(f"Qualitat del guany: {q:.0f}% del pes guanyat és múscul esq.")
+                    L.append(f"Falten per als 65 kg: {65 - w['pes'].iloc[-1]:.2f} kg")
+                else:
+                    L.append("Sense mesures al període.")
+            except Exception as ex:
+                L.append(f"(error llegint bàscula: {ex})")
+
+            # --- Whoop ---
+            L.append("\n## WHOOP")
+            try:
+                if df is not None and not df.empty:
+                    f = calcula_fatiga(df)
+                    f = f[(pd.to_datetime(f["data"]).dt.date >= d_ini) &
+                          (pd.to_datetime(f["data"]).dt.date <= d_fi)]
+                    if not f.empty:
+                        L.append(f"Dies amb dades: {len(f)}")
+                        L.append(f"TDEE mitjà: {f['kcal'].mean():.0f} kcal/dia "
+                                 f"(min {f['kcal'].min():.0f} · max {f['kcal'].max():.0f})")
+                        L.append(f"Recovery mitjà: {f['rec'].mean():.0f}%")
+                        L.append(f"Strain mitjà: {f['strain'].mean():.1f}")
+                        L.append(f"HRV mitjà: {f['hrv'].mean():.0f} ms")
+                        L.append(f"Son mitjà: {f['son'].mean()/60:.1f} h")
+                        L.append(f"Readiness mitjà: {f['readiness'].mean():.0f}")
+                        L.append(f"ACWR final: {f['acwr'].iloc[-1]:.2f}")
+                        dies_baix = (f["readiness"] < 60).sum()
+                        L.append(f"Dies amb Readiness < 60: {dies_baix}/{len(f)}")
+                    else:
+                        L.append("Sense dades al període.")
+                else:
+                    L.append("Whoop no carregat. Ves a la pestanya 📊 abans de generar l'informe.")
+            except Exception as ex:
+                L.append(f"(error: {ex})")
+
+            # --- Sessions ---
+            L.append("\n## ENTRENAMENTS")
+            try:
+                hs = llegeix_sessions()
+                hs = hs[(hs["data"].dt.date >= d_ini) & (hs["data"].dt.date <= d_fi)]
+                if not hs.empty:
+                    forca = hs[hs["dia"].str.startswith("FORÇA")]
+                    L.append(f"Sessions de força: {len(forca)} · Altres: {len(hs) - len(forca)}")
+                    probs = hs[hs["genoll"] != "OK"]
+                    if not probs.empty:
+                        L.append(f"\n⚠️ INCIDÈNCIES DE GENOLL: {len(probs)}")
+                        for _, r_ in probs.iterrows():
+                            L.append(f"  {r_['data'].date()} ({r_['dia']}): {r_['genoll']}")
+                    else:
+                        L.append("Genoll: cap incidència ✅")
+                    L.append("\n--- DETALL DE SESSIONS ---")
+                    for _, r_ in hs.iterrows():
+                        L.append(f"\n[{r_['data'].date()}] {r_['dia']} · {r_['ubicacio']} · "
+                                 f"RPE global {r_['rpe_global']} · Genoll: {r_['genoll']}")
+                        if r_["exercicis"]:
+                            L.append(r_["exercicis"])
+                        if r_["notes"]:
+                            L.append(f"Notes: {r_['notes']}")
+                else:
+                    L.append("Cap sessió registrada al període.")
+            except Exception as ex:
+                L.append(f"(error: {ex})")
+
+            # --- Feedback ---
+            L.append("\n## FEEDBACK D'URI")
+            L.append(feedback if feedback.strip() else "(sense feedback)")
+            L.append("\n" + "=" * 55)
+
+            informe = "\n".join(L)
+            st.session_state["informe"] = informe
+
+        if "informe" in st.session_state:
+            st.divider()
+            st.text_area("Informe generat — copia'l i enganxa'l al xat",
+                         value=st.session_state["informe"], height=420)
+            st.download_button("⬇️ Descarregar .txt", st.session_state["informe"],
+                               file_name=f"informe_{date.today()}.txt",
+                               use_container_width=True)
+        
+        
     # ---------- MOBILITAT PASSIVA ----------
     elif d["tipus"] == "passiva":
         st.info(d["extra"])
